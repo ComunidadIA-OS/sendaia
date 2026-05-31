@@ -20,9 +20,19 @@ const iconos: Record<Categoria, typeof Car> = {
   "Mecánica General": Wrench,
 };
 
+const IDIOMAS = [
+  { code: "es", label: "Español" },
+  { code: "en", label: "English" },
+  { code: "fr", label: "Français" },
+  { code: "de", label: "Deutsch" },
+  { code: "ar", label: "العربية" },
+] as const;
+type IdiomaCode = (typeof IDIOMAS)[number]["code"];
+
 function Biblioteca() {
   const [consejos, setConsejos] = useState<Consejo[]>([]);
   const [q, setQ] = useState("");
+  const [idioma, setIdioma] = useState<IdiomaCode>("es");
   const [consultaActiva, setConsultaActiva] = useState("");
   const [respuesta, setRespuesta] = useState("");
   const [cargando, setCargando] = useState(false);
@@ -35,15 +45,17 @@ function Biblioteca() {
   }, []);
 
   const grupos = useMemo(() => {
-    const t = q.toLowerCase().trim();
-    const filtrados = !t
+    const norm = (s: string) =>
+      s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const t = norm(q.trim());
+    const tokens = t.split(/\s+/).filter((w) => w.length >= 2);
+    const filtrados = tokens.length === 0
       ? consejos
-      : consejos.filter(
-          (c) =>
-            c.problema.toLowerCase().includes(t) ||
-            c.solucion.toLowerCase().includes(t) ||
-            c.autor.toLowerCase().includes(t),
-        );
+      : consejos.filter((c) => {
+          const hay = norm(`${c.problema} ${c.solucion} ${c.autor} ${c.categoria}`);
+          // coincide si CUALQUIER palabra aparece (búsqueda inmediata, multi-idioma)
+          return tokens.some((tok) => hay.includes(tok));
+        });
     const map = new Map<Categoria, Consejo[]>();
     for (const c of filtrados) {
       const arr = map.get(c.categoria) ?? [];
@@ -72,7 +84,7 @@ function Biblioteca() {
       const res = await fetch("/api/maestro", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ consulta: texto }),
+        body: JSON.stringify({ consulta: texto, idioma }),
         signal: ctrl.signal,
       });
       if (!res.ok || !res.body) {
@@ -126,6 +138,28 @@ function Biblioteca() {
           Pregunta cualquier avería, modelo o mantenimiento. Pulsa Enter o el botón para consultar.
         </p>
       </header>
+
+      <div className="px-5 pb-3">
+        <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Idioma
+        </label>
+        <div className="flex flex-wrap gap-2">
+          {IDIOMAS.map((i) => (
+            <button
+              key={i.code}
+              type="button"
+              onClick={() => setIdioma(i.code)}
+              className={`rounded-full border px-3 py-1.5 text-xs transition ${
+                idioma === i.code
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-card text-foreground hover:border-primary/40"
+              }`}
+            >
+              {i.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className="px-5">
         <form
@@ -211,6 +245,7 @@ function Biblioteca() {
                     key={c.id}
                     to="/detalle/$tema"
                     params={{ tema: encodeURIComponent(c.problema) }}
+                    state={{ consejo: c } as never}
                     className="block rounded-2xl border border-border bg-card p-4 shadow-soft transition hover:border-primary hover:bg-primary/5"
                   >
                     <h4 className="font-bold text-foreground">{c.problema}</h4>
